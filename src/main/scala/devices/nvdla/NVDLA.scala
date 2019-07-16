@@ -22,8 +22,9 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
 
   val blackboxName = "nvdla_" + params.config
   // val hasSecondAXI = params.config == "large"
-  val hasSecondAXI = params.config == "small"
-  val hasSlaveAXI = params.config == "large"
+  val hasSecondAXI = false
+  // val hasSlaveAXI = params.config == "large"
+  val hasSlaveAXI = true
   val dataWidthAXI = if (params.config == "large") 256 else 64
 
   // DTS
@@ -53,6 +54,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     := dbb_axi_node)
 
 
+
   // TL <-> AXI-Slave
   val nvdla_bus2core_axi_node = if (hasSlaveAXI) Some( AXI4SlaveNode(Seq(AXI4SlavePortParameters(
     Seq(AXI4SlaveParameters(
@@ -68,15 +70,15 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     minLatency = 1))))
   else None
 
-  // val cfg_axi4_slave = if (hasSlaveAXI) Some( nvdla_bus2core_axi_node.get := LazyModule(new TLToAXI4).node )
-  val cfg_axi4_slave = nvdla_bus2core_axi_node.get
+  val cfg_axi4slv_node = nvdla_bus2core_axi_node.get
 
-  val cfg_axi4_slv: TLInwardNode =(cfg_axi4_slave
+  val cfg_tl2axi4slv_node: TLInwardNode =(cfg_axi4slv_node
     := AXI4Buffer()
     := AXI4UserYanker(capMaxFlight = Some(2))
     := TLToAXI4()
     := TLFragmenter(4, 64, holdFirstDeny = true)
     := TLWidthWidget(8))
+
 
 
 
