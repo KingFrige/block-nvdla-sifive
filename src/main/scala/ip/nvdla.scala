@@ -5,7 +5,7 @@ import Chisel._
 
 //scalastyle:off
 //turn off linter: blackbox name must match verilog module
-class nvdla(blackboxName: String, hasSecondAXI: Boolean, dataWidthAXI: Int) extends BlackBox {
+class nvdla(blackboxName: String, hasSecondAXI: Boolean, hasSlaveAXI: Boolean, dataWidthAXI: Int) extends BlackBox {
 
   override def desiredName = blackboxName
 
@@ -47,6 +47,40 @@ class nvdla(blackboxName: String, hasSecondAXI: Boolean, dataWidthAXI: Int) exte
     val nvdla_core2dbb_r_rid = Bits(INPUT,8)
     val nvdla_core2dbb_r_rlast = Bool(INPUT)
     val nvdla_core2dbb_r_rdata = Bits(INPUT,dataWidthAXI)
+
+    // AXI slave interface
+    val nvdla_bus2core = if (hasSlaveAXI) Some(new Bundle {
+      val aw_valid = Bool(INPUT)
+      val aw_awready = Bool(OUTPUT)
+      val aw_awid = Bits(INPUT,8)
+      val aw_awlen = Bits(INPUT,4)
+      val aw_awsize = Bits(INPUT,3)
+      val aw_awaddr = Bits(INPUT,64)
+
+      val w_wvalid = Bool(INPUT)
+      val w_wready = Bool(OUTPUT)
+      val w_wdata = Bits(INPUT,dataWidthAXI)
+      val w_wstrb = Bits(INPUT,dataWidthAXI/8)
+      val w_wlast = Bool(INPUT)
+
+      val ar_arvalid = Bool(INPUT)
+      val ar_arready = Bool(OUTPUT)
+      val ar_arid = Bits(INPUT,8)
+      val ar_arlen = Bits(INPUT,4)
+      val ar_arsize = Bits(INPUT,3)
+      val ar_araddr = Bits(INPUT,64)
+
+      val b_bvalid = Bool(OUTPUT)
+      val b_bready = Bool(INPUT)
+      val b_bid = Bits(OUTPUT,8)
+
+      val r_rvalid = Bool(OUTPUT)
+      val r_rready = Bool(INPUT)
+      val r_rid  = Bits(OUTPUT,8)
+      val r_rlast = Bool(OUTPUT)
+      val r_rdata = Bits(OUTPUT,dataWidthAXI)
+    }) else None
+
     // cvsram AXI
     val nvdla_core2cvsram = if (hasSecondAXI) Some(new Bundle {
 

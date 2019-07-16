@@ -14,17 +14,21 @@ import nvidia.blocks.ip.dla._
 
 case class NVDLAParams(
   config: String,
-  raddress: BigInt
+  raddress_apb_slv: BigInt,
+  raddress_axi_slv: BigInt
 )
 
 class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousCrossing(8, 3))(implicit p: Parameters) extends LazyModule with HasCrossing {
 
   val blackboxName = "nvdla_" + params.config
-  val hasSecondAXI = params.config == "large"
+  // val hasSecondAXI = params.config == "large"
+  val hasSecondAXI = params.config == "small"
+  val hasSlaveAXI = params.config == "large"
   val dataWidthAXI = if (params.config == "large") 256 else 64
 
   // DTS
-  val dtsdevice = new SimpleDevice("nvdla",Seq("nvidia,nvdla_2"))
+  val dtsdevice = new SimpleDevice("nvdla-apb-slave",Seq("nvidia,nvdla_2"))
+  val dtsaxidevice = new SimpleDevice("nvdla-axi-slave",Seq("nvidia,nvdla_2"))
 
   // dbb TL
   val dbb_tl_node = TLIdentityNode()
@@ -48,6 +52,34 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     := AXI4Buffer()
     := dbb_axi_node)
 
+
+  // TL <-> AXI-Slave
+  val nvdla_bus2core_axi_node = if (hasSlaveAXI) Some( AXI4SlaveNode(Seq(AXI4SlavePortParameters(
+    Seq(AXI4SlaveParameters(
+      address       = Seq(AddressSet(params.raddress_axi_slv, 0x40000L-1L)), // 256KB
+      resources     = dtsaxidevice.reg("axi4slave-control"),
+      regionType    = RegionType.UNCACHED,
+      executable    = false,
+      supportsRead  = TransferSizes(1, 4),
+      supportsWrite = TransferSizes(1, 4),
+      interleavedId = Some(0))),
+    beatBytes  = 4,
+    wcorrupt   = false,
+    minLatency = 1))))
+  else None
+
+  // val cfg_axi4_slave = if (hasSlaveAXI) Some( nvdla_bus2core_axi_node.get := LazyModule(new TLToAXI4).node )
+  val cfg_axi4_slave = nvdla_bus2core_axi_node.get
+
+  val cfg_axi4_slv: TLInwardNode =(cfg_axi4_slave
+    := AXI4Buffer()
+    := AXI4UserYanker(capMaxFlight = Some(2))
+    := TLToAXI4()
+    := TLFragmenter(4, 64, holdFirstDeny = true)
+    := TLWidthWidget(8))
+
+
+
   // cvsram AXI
   val cvsram_axi_node = if (hasSecondAXI) Some(AXI4MasterNode(
     Seq(
@@ -70,7 +102,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     Seq(
       APBSlavePortParameters(
         slaves = Seq(APBSlaveParameters(
-          address       = Seq(AddressSet(params.raddress, 0x40000L-1L)), // 256KB
+          address       = Seq(AddressSet(params.raddress_apb_slv, 0x40000L-1L)), // 256KB
           resources     = dtsdevice.reg("control"),
           executable    = false,
           supportsWrite = true,
@@ -84,7 +116,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
 
   lazy val module = new LazyModuleImp(this) {
 
-    val u_nvdla = Module(new nvdla(blackboxName, hasSecondAXI, dataWidthAXI))
+    val u_nvdla = Module(new nvdla(blackboxName, hasSecondAXI, hasSlaveAXI, dataWidthAXI))
 
     u_nvdla.io.core_clk    := clock
     u_nvdla.io.csb_clk     := clock
@@ -122,6 +154,41 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     u_nvdla.io.nvdla_core2dbb_r_rid         := dbb.r.bits.id
     u_nvdla.io.nvdla_core2dbb_r_rlast       := dbb.r.bits.last
     u_nvdla.io.nvdla_core2dbb_r_rdata       := dbb.r.bits.data
+    
+    
+    u_nvdla.io.nvdla_bus2core.foreach { u_nvdla_axi4slave =>
+      val (dla_slv, _) = nvdla_bus2core_axi_node.get.in(0)
+
+      u_nvdla_axi4slave.aw_valid    := dla_slv.aw.valid
+      dla_slv.aw.ready              := u_nvdla_axi4slave.aw_awready
+      u_nvdla_axi4slave.aw_awid     := dla_slv.aw.bits.id
+      u_nvdla_axi4slave.aw_awlen    := dla_slv.aw.bits.len
+      u_nvdla_axi4slave.aw_awsize   := dla_slv.aw.bits.size
+      u_nvdla_axi4slave.aw_awaddr   := dla_slv.aw.bits.addr
+
+      u_nvdla_axi4slave.w_wvalid    := dla_slv.w.valid
+      dla_slv.aw.ready              := u_nvdla_axi4slave.w_wready
+      u_nvdla_axi4slave.w_wdata     := dla_slv.w.bits.data
+      u_nvdla_axi4slave.w_wstrb     := dla_slv.w.bits.strb
+      u_nvdla_axi4slave.w_wlast     := dla_slv.w.bits.last
+
+      u_nvdla_axi4slave.ar_arvalid  := dla_slv.ar.valid
+      dla_slv.ar.ready              := u_nvdla_axi4slave.ar_arready
+      u_nvdla_axi4slave.ar_arid     := dla_slv.ar.bits.id
+      u_nvdla_axi4slave.ar_arlen    := dla_slv.ar.bits.len
+      u_nvdla_axi4slave.ar_arsize   := dla_slv.ar.bits.size
+      u_nvdla_axi4slave.ar_araddr   := dla_slv.ar.bits.addr
+
+      dla_slv.b.valid               := u_nvdla_axi4slave.b_bvalid
+      u_nvdla_axi4slave.b_bready    := dla_slv.b.ready
+      dla_slv.b.bits.id             := u_nvdla_axi4slave.b_bid
+
+      dla_slv.r.valid               := u_nvdla_axi4slave.r_rvalid
+      u_nvdla_axi4slave.r_rready    := dla_slv.r.ready
+      dla_slv.r.bits.id             := u_nvdla_axi4slave.r_rid
+      dla_slv.r.bits.last           := u_nvdla_axi4slave.r_rlast
+      dla_slv.r.bits.data           := u_nvdla_axi4slave.r_rdata
+    }
 
     u_nvdla.io.nvdla_core2cvsram.foreach { u_nvdla_cvsram =>
       val (cvsram, _) = cvsram_axi_node.get.out(0)

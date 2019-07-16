@@ -6,6 +6,10 @@ import freechips.rocketchip.config.Field
 import freechips.rocketchip.subsystem.BaseSubsystem
 import freechips.rocketchip.diplomacy.{LazyModule,BufferParams}
 import freechips.rocketchip.tilelink.{TLBuffer, TLIdentityNode}
+import freechips.rocketchip.amba.axi4._
+import freechips.rocketchip.tilelink._
+import freechips.rocketchip.subsystem.{CrossesToOnlyOneClockDomain, CacheBlockBytes}
+
 
 case object NVDLAKey extends Field[Option[NVDLAParams]](None)
 case object NVDLAFrontBusExtraBuffers extends Field[Int]
