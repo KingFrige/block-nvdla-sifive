@@ -62,10 +62,10 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
       resources     = dtsaxidevice.reg("axi4slave-control"),
       regionType    = RegionType.UNCACHED,
       executable    = false,
-      supportsRead  = TransferSizes(1, 64),
-      supportsWrite = TransferSizes(1, 64),
+      supportsRead  = TransferSizes(1, dataWidthAXI/8),
+      supportsWrite = TransferSizes(1, dataWidthAXI/8),
       interleavedId = Some(0))),
-    beatBytes  = 8,
+    beatBytes  = dataWidthAXI/8,
     wcorrupt   = false,
     minLatency = 1))))
   else None
@@ -87,7 +87,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     (cfg_axi4slv_node
       := AXI4Buffer()
       := AXI4UserYanker()
-      := AXI4Deinterleaver(64)
+      := AXI4Deinterleaver(dataWidthAXI/8)
       := AXI4IdIndexer(idBits=4)
       := TLToAXI4(adapterName = Some("nvdla-axi4-slave")))
 
