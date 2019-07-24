@@ -62,23 +62,34 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
       resources     = dtsaxidevice.reg("axi4slave-control"),
       regionType    = RegionType.UNCACHED,
       executable    = false,
-      supportsRead  = TransferSizes(1, 4),
-      supportsWrite = TransferSizes(1, 4),
+      supportsRead  = TransferSizes(1, 64),
+      supportsWrite = TransferSizes(1, 64),
       interleavedId = Some(0))),
-    beatBytes  = 4,
+    beatBytes  = 8,
     wcorrupt   = false,
     minLatency = 1))))
   else None
 
   val cfg_axi4slv_node = nvdla_bus2core_axi_node.get
 
-  val cfg_tl2axi4slv_node: TLInwardNode =(cfg_axi4slv_node
+  /*
+  val cfg_tl2axi4slv_node: TLInwardNode =
+    (cfg_axi4slv_node
     := AXI4Buffer()
     := AXI4UserYanker(capMaxFlight = Some(2))
     := TLToAXI4()
-    := TLFragmenter(4, 64, holdFirstDeny = true)
-    := TLWidthWidget(8))
+    := TLFragmenter(8, 64, holdFirstDeny = true)
+    := TLWidthWidget(64/8)
+    := TLBuffer())
+   */
 
+  val cfg_tl2axi4slv_node: TLInwardNode =
+    (cfg_axi4slv_node
+      := AXI4Buffer()
+      := AXI4UserYanker()
+      := AXI4Deinterleaver(64)
+      := AXI4IdIndexer(idBits=4)
+      := TLToAXI4(adapterName = Some("nvdla-axi4-slave")))
 
 
 
