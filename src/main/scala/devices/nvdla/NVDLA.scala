@@ -29,7 +29,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
 
   // DTS
   val dtsdevice = new SimpleDevice("nvdla-apb-slave",Seq("nvidia,nvdla_2"))
-  val dtsaxidevice = new SimpleDevice("nvdla-axi-slave",Seq("nvidia,nvdla_2"))
+  val dtsaxidevice = new SimpleDevice("nvdla-axi-slave",Seq("nvidia,nvdla_axi4slv_2"))
 
   // dbb TL
   val dbb_tl_node = TLIdentityNode()
@@ -65,10 +65,23 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
       supportsRead  = TransferSizes(1, dataWidthAXI/8),
       supportsWrite = TransferSizes(1, dataWidthAXI/8),
       interleavedId = Some(0))),
-    beatBytes  = dataWidthAXI/8,
+    beatBytes  = 4,
+    // beatBytes  = dataWidthAXI/8,
     wcorrupt   = false,
     minLatency = 1))))
   else None
+
+  /*
+  val nvdla_bus2core_axi_node = if (hasSlaveAXI) Some(AXI4SlaveNode(Seq(AXI4SlavePortParameters(
+     Seq(AXI4SlaveParameters(
+      address = Seq(AddressSet(params.raddress_axi_slv, 0x40000L - 1L)), // 256KB
+      resources = Seq(Resource(dtsaxidevice, "ranges")),
+      executable = true,
+      supportsWrite = TransferSizes(1, dataWidthAXI/8),
+      supportsRead = TransferSizes(1, dataWidthAXI/8))),
+    beatBytes = dataWidthAXI / 8))))
+  else None
+   */
 
   val cfg_axi4slv_node = nvdla_bus2core_axi_node.get
 
