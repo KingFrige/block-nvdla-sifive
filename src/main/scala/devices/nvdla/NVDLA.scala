@@ -58,7 +58,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
   // TL <-> AXI-Slave
   val nvdla_bus2core_axi_node = if (hasSlaveAXI) Some( AXI4SlaveNode(Seq(AXI4SlavePortParameters(
     Seq(AXI4SlaveParameters(
-      address       = Seq(AddressSet(params.raddress_axi_slv, 0x40000L-1L)), // 256KB
+      address       = Seq(AddressSet(params.raddress_axi_slv, 0x200000L-1L)), // 2MB
       resources     = dtsaxidevice.reg("axi4slave-control"),
       regionType    = RegionType.UNCACHED,
       executable    = false,
