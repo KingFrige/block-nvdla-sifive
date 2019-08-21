@@ -48,38 +48,26 @@ class nvdla(blackboxName: String, hasSecondAXI: Boolean, hasSlaveAXI: Boolean, d
     val nvdla_core2dbb_r_rlast = Bool(INPUT)
     val nvdla_core2dbb_r_rdata = Bits(INPUT,dataWidthAXI)
 
-    // AXI slave interface
+    //-----------------------------------------------
+    // AHB slave interface
     val nvdla_bus2core = if (hasSlaveAXI) Some(new Bundle {
-      val aw_valid = Bool(INPUT)
-      val aw_awready = Bool(OUTPUT)
-      val aw_awid = Bits(INPUT,8)
-      val aw_awlen = Bits(INPUT,4)
-      val aw_awsize = Bits(INPUT,3)
-      val aw_awaddr = Bits(INPUT,64)
+      val htrans    = Bits(INPUT, 2)
+      val hsel      = Bool(INPUT)
+      val hready    = Bool(INPUT)
 
-      val w_wvalid = Bool(INPUT)
-      val w_wready = Bool(OUTPUT)
-      val w_wdata = Bits(INPUT,dataWidthAXI)
-      val w_wstrb = Bits(INPUT,dataWidthAXI/8)
-      val w_wlast = Bool(INPUT)
+      // Payload signals
+      val hwrite    = Bool(INPUT)
+      val haddr     = Bits(INPUT, 32)
+      val hsize     = Bits(INPUT, 3)
+      val hburst    = Bits(INPUT, 3)
+      val hprot     = Bits(INPUT, 4)
+      val hwdata    = Bits(INPUT, 32)
 
-      val ar_arvalid = Bool(INPUT)
-      val ar_arready = Bool(OUTPUT)
-      val ar_arid = Bits(INPUT,8)
-      val ar_arlen = Bits(INPUT,4)
-      val ar_arsize = Bits(INPUT,3)
-      val ar_araddr = Bits(INPUT,64)
-
-      val b_bvalid = Bool(OUTPUT)
-      val b_bready = Bool(INPUT)
-      val b_bid = Bits(OUTPUT,8)
-
-      val r_rvalid = Bool(OUTPUT)
-      val r_rready = Bool(INPUT)
-      val r_rid  = Bits(OUTPUT,8)
-      val r_rlast = Bool(OUTPUT)
-      val r_rdata = Bits(OUTPUT,dataWidthAXI)
+      val hreadyout = Bool(OUTPUT)
+      val hresp     = Bool(OUTPUT)
+      val hrdata    = Bits(OUTPUT, 32)
     }) else None
+    //-----------------------------------------------
 
     // cvsram AXI
     val nvdla_core2cvsram = if (hasSecondAXI) Some(new Bundle {

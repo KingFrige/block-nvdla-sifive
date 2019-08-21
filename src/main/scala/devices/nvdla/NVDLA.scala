@@ -5,6 +5,7 @@ import Chisel._
 import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.amba.axi4._
+import freechips.rocketchip.amba.ahb._
 import freechips.rocketchip.amba.apb._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.interrupts._
@@ -15,7 +16,7 @@ import nvidia.blocks.ip.dla._
 case class NVDLAParams(
   config: String,
   raddress_apb_slv: BigInt,
-  raddress_axi_slv: BigInt
+  raddress_ahb_slv: BigInt
 )
 
 class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousCrossing(8, 3))(implicit p: Parameters) extends LazyModule with HasCrossing {
@@ -23,8 +24,8 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
   val blackboxName = "nvdla_" + params.config
   // val hasSecondAXI = params.config == "large"
   val hasSecondAXI = false
-  // val hasSlaveAXI = params.config == "large"
-  val hasSlaveAXI = true
+  // val hasSlaveAHB = params.config == "large"
+  val hasSlaveAHB = true
   val dataWidthAXI = if (params.config == "large") 256 else 64
 
   // DTS
@@ -54,41 +55,47 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
     := dbb_axi_node)
 
 
-
-  // TL <-> AXI-Slave
-  val nvdla_bus2core_axi_node = if (hasSlaveAXI) Some( AXI4SlaveNode(Seq(AXI4SlavePortParameters(
-    Seq(AXI4SlaveParameters(
-      address       = Seq(AddressSet(params.raddress_axi_slv, 0x200000L-1L)), // 2MB
-      resources     = dtsaxidevice.reg("axi4slave-control"),
+//---------------------------------------------------------
+  // TL <-> AHB-Slave
+  val nvdla_bus2core_ahb_node = if (hasSlaveAHB) Some(AHBSlaveNode(Seq(AHBSlavePortParameters(
+    Seq(AHBSlaveParameters(
+      address       = Seq(AddressSet(params.raddress_ahb_slv, 0x200000L-1L)), // 2MB
+      resources     = dtsaxidevice.reg("ahbslave-control"),
       regionType    = RegionType.UNCACHED,
       executable    = false,
-      supportsRead  = TransferSizes(1, 128),
-      supportsWrite = TransferSizes(1, 128),
-      interleavedId = Some(0))),
-    beatBytes  = dataWidthAXI/8,
-    wcorrupt   = false,
-    minLatency = 1))))
+      supportsRead  = TransferSizes(1, 64),
+      supportsWrite = TransferSizes(1, 64))),
+      beatBytes  = 4))))
   else None
 
-  val cfg_axi4slv_node = nvdla_bus2core_axi_node.get
+  val cfg_ahbslv_node = nvdla_bus2core_ahb_node.get
 
-  val cfg_tl2axi4slv_node: TLInwardNode =
-    (cfg_axi4slv_node
-    := AXI4Buffer()
-    := AXI4UserYanker(capMaxFlight = Some(2))
-    := TLToAXI4())
+  val cfg_tl2ahbslv_node =
+    (cfg_ahbslv_node
+       := TLToAHB(true)
+       := TLBuffer(BufferParams.flow))
 
-/*
-val cfg_tl2axi4slv_node: TLInwardNode =
-  (cfg_axi4slv_node
-    := AXI4Buffer()
-    := AXI4UserYanker()
-    := AXI4Deinterleaver(dataWidthAXI/8)
-    := AXI4IdIndexer(idBits=4)
-    := TLToAXI4(adapterName = Some("nvdla-axi4-slave")))
+//---------------------------------------------------------
+  /*
+  val nvdla_bus2core_ahb_node = if (hasSlaveAHB) Some(AHBSlaveNode(Seq(AHBSlavePortParameters(
+        Seq(AHBSlaveParameters(
+          address       = Seq(AddressSet(params.raddress_ahb_slv, 0x200000L-1L)), // 2MB
+          resources     = dtsdevice.reg("ahb-control"),
+          regionType    = RegionType.UNCACHED,
+          executable    = false,
+          supportsRead  = TransferSizes(1, 32),
+          supportsWrite = TransferSizes(1, 32))),
+        beatBytes  = 4))))
+  else None
+
+  val cfg_ahbslv_node = nvdla_bus2core_ahb_node.get
+  val cfg_tl2ahbslv_node =
+    (cfg_ahbslv_node
+      := TLToAHB()
+      := TLBuffer(BufferParams.flow))
+  // val cfg_tl2ahbslv_node = cfg_ahbslv_node := LazyModule(new TLToAHB).node
    */
-
-
+//---------------------------------------------------------
 
 // cvsram AXI
 val cvsram_axi_node = if (hasSecondAXI) Some(AXI4MasterNode(
@@ -126,7 +133,7 @@ val int_node = IntSourceNode(IntSourcePortSimple(num = 1, resources = dtsdevice.
 
 lazy val module = new LazyModuleImp(this) {
 
-  val u_nvdla = Module(new nvdla(blackboxName, hasSecondAXI, hasSlaveAXI, dataWidthAXI))
+  val u_nvdla = Module(new nvdla(blackboxName, hasSecondAXI, hasSlaveAHB, dataWidthAXI))
 
   u_nvdla.io.core_clk    := clock
   u_nvdla.io.csb_clk     := clock
@@ -165,39 +172,22 @@ lazy val module = new LazyModuleImp(this) {
   u_nvdla.io.nvdla_core2dbb_r_rlast       := dbb.r.bits.last
   u_nvdla.io.nvdla_core2dbb_r_rdata       := dbb.r.bits.data
 
+  u_nvdla.io.nvdla_bus2core.foreach { u_nvdla_ahbslave =>
+    val (dla_slv, _) = nvdla_bus2core_ahb_node.get.in(0)
 
-  u_nvdla.io.nvdla_bus2core.foreach { u_nvdla_axi4slave =>
-    val (dla_slv, _) = nvdla_bus2core_axi_node.get.in(0)
+    u_nvdla_ahbslave.htrans    := dla_slv.htrans
+    u_nvdla_ahbslave.hsel      := dla_slv.hsel
+    u_nvdla_ahbslave.hready    := dla_slv.hready
+    u_nvdla_ahbslave.hwrite    := dla_slv.hwrite
+    u_nvdla_ahbslave.haddr     := dla_slv.haddr
+    u_nvdla_ahbslave.hsize     := dla_slv.hsize
+    u_nvdla_ahbslave.hburst    := dla_slv.hburst
+    u_nvdla_ahbslave.hprot     := dla_slv.hprot
+    u_nvdla_ahbslave.hwdata    := dla_slv.hwdata
 
-    u_nvdla_axi4slave.aw_valid    := dla_slv.aw.valid
-    dla_slv.aw.ready              := u_nvdla_axi4slave.aw_awready
-    u_nvdla_axi4slave.aw_awid     := dla_slv.aw.bits.id
-    u_nvdla_axi4slave.aw_awlen    := dla_slv.aw.bits.len
-    u_nvdla_axi4slave.aw_awsize   := dla_slv.aw.bits.size
-    u_nvdla_axi4slave.aw_awaddr   := dla_slv.aw.bits.addr
-
-    u_nvdla_axi4slave.w_wvalid    := dla_slv.w.valid
-    dla_slv.aw.ready              := u_nvdla_axi4slave.w_wready
-    u_nvdla_axi4slave.w_wdata     := dla_slv.w.bits.data
-    u_nvdla_axi4slave.w_wstrb     := dla_slv.w.bits.strb
-    u_nvdla_axi4slave.w_wlast     := dla_slv.w.bits.last
-
-    u_nvdla_axi4slave.ar_arvalid  := dla_slv.ar.valid
-    dla_slv.ar.ready              := u_nvdla_axi4slave.ar_arready
-    u_nvdla_axi4slave.ar_arid     := dla_slv.ar.bits.id
-    u_nvdla_axi4slave.ar_arlen    := dla_slv.ar.bits.len
-    u_nvdla_axi4slave.ar_arsize   := dla_slv.ar.bits.size
-    u_nvdla_axi4slave.ar_araddr   := dla_slv.ar.bits.addr
-
-    dla_slv.b.valid               := u_nvdla_axi4slave.b_bvalid
-    u_nvdla_axi4slave.b_bready    := dla_slv.b.ready
-    dla_slv.b.bits.id             := u_nvdla_axi4slave.b_bid
-
-    dla_slv.r.valid               := u_nvdla_axi4slave.r_rvalid
-    u_nvdla_axi4slave.r_rready    := dla_slv.r.ready
-    dla_slv.r.bits.id             := u_nvdla_axi4slave.r_rid
-    dla_slv.r.bits.last           := u_nvdla_axi4slave.r_rlast
-    dla_slv.r.bits.data           := u_nvdla_axi4slave.r_rdata
+    dla_slv.hreadyout          := u_nvdla_ahbslave.hreadyout
+    dla_slv.hresp              := u_nvdla_ahbslave.hresp
+    dla_slv.hrdata             := u_nvdla_ahbslave.hrdata
   }
 
   u_nvdla.io.nvdla_core2cvsram.foreach { u_nvdla_cvsram =>
@@ -223,8 +213,6 @@ lazy val module = new LazyModuleImp(this) {
     cvsram.ar.bits.size                   := u_nvdla_cvsram.ar_arsize
     cvsram.ar.bits.addr                   := u_nvdla_cvsram.ar_araddr
 
-    u_nvdla_cvsram.b_bvalid               := cvsram.b.valid
-    cvsram.b.ready                        := u_nvdla_cvsram.b_bready
     u_nvdla_cvsram.b_bid                  := cvsram.b.bits.id
 
     u_nvdla_cvsram.r_rvalid               := cvsram.r.valid
