@@ -30,7 +30,7 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
 
   // DTS
   val dtsdevice = new SimpleDevice("nvdla-apb-slave",Seq("nvidia,nvdla_2"))
-  val dtsaxidevice = new SimpleDevice("nvdla-axi-slave",Seq("nvidia,nvdla_axi4slv_2"))
+  val dtsahbdevice = new SimpleDevice("nvdla-ahb-slave",Seq("nvidia,nvdla_ahbslv_2"))
 
   // dbb TL
   val dbb_tl_node = TLIdentityNode()
@@ -56,13 +56,14 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
 
 
 //---------------------------------------------------------
+  /*
   // TL <-> AHB-Slave
   val nvdla_bus2core_ahb_node = if (hasSlaveAHB) Some(AHBSlaveNode(Seq(AHBSlavePortParameters(
     Seq(AHBSlaveParameters(
       address       = Seq(AddressSet(params.raddress_ahb_slv, 0x200000L-1L)), // 2MB
-      resources     = dtsaxidevice.reg("ahbslave-control"),
-      regionType    = RegionType.UNCACHED,
-      executable    = false,
+      resources     = dtsahbdevice.reg("ahbslave-control"),
+      regionType    = RegionType.UNCACHEABLE,
+      executable    = true,
       supportsRead  = TransferSizes(1, 64),
       supportsWrite = TransferSizes(1, 64))),
       beatBytes  = 4))))
@@ -72,29 +73,24 @@ class NVDLA(params: NVDLAParams, val crossing: ClockCrossingType = AsynchronousC
 
   val cfg_tl2ahbslv_node =
     (cfg_ahbslv_node
-       := TLToAHB(true)
-       := TLBuffer(BufferParams.flow))
+       := TLToAHB()
+       := TLBuffer())
+   */
 
 //---------------------------------------------------------
-  /*
   val nvdla_bus2core_ahb_node = if (hasSlaveAHB) Some(AHBSlaveNode(Seq(AHBSlavePortParameters(
         Seq(AHBSlaveParameters(
           address       = Seq(AddressSet(params.raddress_ahb_slv, 0x200000L-1L)), // 2MB
-          resources     = dtsdevice.reg("ahb-control"),
+          resources     = dtsahbdevice.reg("ahb-control"),
           regionType    = RegionType.UNCACHED,
-          executable    = false,
-          supportsRead  = TransferSizes(1, 32),
-          supportsWrite = TransferSizes(1, 32))),
+          executable    = true,
+          supportsRead  = TransferSizes(1, 64),
+          supportsWrite = TransferSizes(1, 64))),
         beatBytes  = 4))))
   else None
 
   val cfg_ahbslv_node = nvdla_bus2core_ahb_node.get
-  val cfg_tl2ahbslv_node =
-    (cfg_ahbslv_node
-      := TLToAHB()
-      := TLBuffer(BufferParams.flow))
-  // val cfg_tl2ahbslv_node = cfg_ahbslv_node := LazyModule(new TLToAHB).node
-   */
+  val cfg_tl2ahbslv_node = cfg_ahbslv_node := LazyModule(new TLToAHB).node
 //---------------------------------------------------------
 
 // cvsram AXI
